@@ -88,7 +88,7 @@ public class Libvio extends Spider {
     /* ==================== 首页 ==================== */
 
     @Override
-    public String homeContent(boolean filter) {
+    public String homeContent(boolean filter) throws Exception {
         List<Class> classes = new ArrayList<>();
         List<Vod> list = new ArrayList<>();
         Document doc = Jsoup.parse(fetchPage(siteUrl));
@@ -106,7 +106,7 @@ public class Libvio extends Spider {
     }
 
     @Override
-    public String homeVideoContent() {
+    public String homeVideoContent() throws Exception {
         Document doc = Jsoup.parse(fetchPage(siteUrl));
         List<Vod> list = parseVodList(doc);
         return list.isEmpty() ? "" : Result.string(list.get(0));
@@ -115,7 +115,7 @@ public class Libvio extends Spider {
     /* ==================== 分类列表 ==================== */
 
     @Override
-    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) {
+    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) throws Exception {
         // 按站点规律拼 12 段 URL；未选筛选项的段留空字符串
         String[] seg = new String[12];
         Arrays.fill(seg, "");
@@ -144,7 +144,7 @@ public class Libvio extends Spider {
     /* ==================== 详情 ==================== */
 
     @Override
-    public String detailContent(List<String> ids) {
+    public String detailContent(List<String> ids) throws Exception {
         String id = ids.get(0); // 形如 /detail/6023.html
         Document doc = Jsoup.parse(fetchPage(siteUrl + id));
 
@@ -207,7 +207,7 @@ public class Libvio extends Spider {
     /* ==================== 搜索 ==================== */
 
     @Override
-    public String searchContent(String key, boolean quick) {
+    public String searchContent(String key, boolean quick) throws Exception {
         String target = siteUrl + "/search/" + URLEncoder.encode(key).replace("+", "%20") + "-------------.html";
         Document doc = Jsoup.parse(fetchPage(target));
         return Result.string(parseVodList(doc));
@@ -216,7 +216,7 @@ public class Libvio extends Spider {
     /* ==================== 播放 ==================== */
 
     @Override
-    public String playerContent(String flag, String id, List<String> vipFlags) {
+    public String playerContent(String flag, String id, List<String> vipFlags) throws Exception {
         // id 是播放页链接 /w/{vid}-{sid}-{nid}.html
         String html = fetchPage(siteUrl + id);
         Matcher m = regexPlayer.matcher(html);
