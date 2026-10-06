@@ -42,13 +42,21 @@ import java.util.regex.Pattern;
  */
 public class Libvio extends Spider {
 
-    // ext 模式：域名是实例变量而非常量。TVBox 配置里站点加 "ext": "https://新域名" 即可
-    // 覆盖默认域名，站点换域名时只改配置、不用重新打包 jar
+    // ext 模式增强版（同 Ddys）：本站有 JS 浏览器验证（"正在验证您的浏览器"），爬虫无法执行 JS，
+    // 需要 Cookie 注入：
+    //   "ext": "https://www.libvio.to"                —— 只覆盖域名（会被验证拦截，仅占位）
+    //   "ext": "https://www.libvio.to|Cookie整串"     —— 域名 + 会话Cookie（推荐用法）
+    // Cookie 获取：电脑浏览器打开站点等它自动过验证 → F12 → Network → 刷新 → 点第一条请求
+    //   → Request Headers → 复制 Cookie: 后面的整串 → 失效后重取一次
     private String siteUrl = "https://www.libvio.to";
+    private volatile String cookie = "";
 
     @Override
     public void init(Context context, String extend) {
-        if (extend != null && extend.startsWith("http")) siteUrl = extend.replaceAll("/+$", "");
+        if (extend == null || !extend.startsWith("http")) return;
+        String[] parts = extend.split("\\|", 2);
+        siteUrl = parts[0].replaceAll("/+$", "");
+        if (parts.length > 1 && !parts[1].trim().isEmpty()) cookie = parts[1].trim();
     }
 
     // 列表页 12 段 URL 中会用到的段下标（从 0 数）
@@ -64,7 +72,17 @@ public class Libvio extends Spider {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("User-Agent", Util.CHROME);
         headers.put("Referer", siteUrl + "/");
+        if (!cookie.isEmpty()) headers.put("Cookie", cookie);
         return headers;
+    }
+
+    // 带拦截检测的请求：被 JS 验证拦住时给出明确指引，而不是返回空数据
+    private String fetchPage(String url) throws Exception {
+        String body = OkHttp.string(url, getHeaders());
+        if (body.contains("browser verification") || body.contains("正在验证")) {
+            throw new Exception("libvio 被浏览器验证拦截：请用电脑浏览器过一次验证，ext 填 https://www.libvio.to|你的Cookie");
+        }
+        return body;
     }
 
     /* ==================== 首页 ==================== */
@@ -73,7 +91,7 @@ public class Libvio extends Spider {
     public String homeContent(boolean filter) {
         List<Class> classes = new ArrayList<>();
         List<Vod> list = new ArrayList<>();
-        Document doc = Jsoup.parse(OkHttp.string(siteUrl, getHeaders()));
+        Document doc = Jsoup.parse(fetchPage(siteUrl));
         // 从导航栏解析分类（桌面/移动两套菜单会重复，用 LinkedHashSet 按 id 去重）
         Set<String> seen = new LinkedHashSet<>();
         for (Element a : doc.select("a[href^=/type/]")) {
@@ -89,7 +107,7 @@ public class Libvio extends Spider {
 
     @Override
     public String homeVideoContent() {
-        Document doc = Jsoup.parse(OkHttp.string(siteUrl, getHeaders()));
+        Document doc = Jsoup.parse(fetchPage(siteUrl));
         List<Vod> list = parseVodList(doc);
         return list.isEmpty() ? "" : Result.string(list.get(0));
     }
@@ -109,7 +127,7 @@ public class Libvio extends Spider {
         seg[SEG_YEAR] = value(extend, "year");
         String target = siteUrl + "/show/" + TextUtils.join("-", seg) + ".html";
 
-        Document doc = Jsoup.parse(OkHttp.string(target, getHeaders()));
+        Document doc = Jsoup.parse(fetchPage(target));
         List<Vod> list = parseVodList(doc);
 
         // 总页数取自分页条"尾页"链接里的页码段，取不到就当只有一页
@@ -128,7 +146,7 @@ public class Libvio extends Spider {
     @Override
     public String detailContent(List<String> ids) {
         String id = ids.get(0); // 形如 /detail/6023.html
-        Document doc = Jsoup.parse(OkHttp.string(siteUrl + id, getHeaders()));
+        Document doc = Jsoup.parse(fetchPage(siteUrl + id));
 
         Vod vod = new Vod();
         vod.setVodId(id);
@@ -156,7 +174,7 @@ public class Libvio extends Spider {
         String entry = path(firstPlayLink(doc));      // /w/{vid}-{sid}-{nid}.html
         if (!entry.isEmpty()) {
             String vid = entry.split("/")[2].split("-")[0];
-            Document play = Jsoup.parse(OkHttp.string(siteUrl + entry, getHeaders()));
+            Document play = Jsoup.parse(fetchPage(siteUrl + entry));
             // 线路去重按 sid，同时记下链接文本（网盘线路用它当集名）
             Map<String, String> sids = new LinkedHashMap<>();
             for (Element a : play.select("ul.stui-play__list a[href*=/w/]")) {
@@ -168,7 +186,7 @@ public class Libvio extends Spider {
             for (Map.Entry<String, String> s : sids.entrySet()) {
                 List<String> episodes = new ArrayList<>();
                 String routePage = "/w/" + vid + "-" + s.getKey() + "-1.html";
-                Document route = Jsoup.parse(OkHttp.string(siteUrl + routePage, getHeaders()));
+                Document route = Jsoup.parse(fetchPage(siteUrl + routePage));
                 for (Element a : route.select("ul.stui-content__playlist a[href*=/w/]")) {
                     episodes.add(a.text().trim() + "$" + path(a.attr("href")));
                 }
@@ -191,7 +209,7 @@ public class Libvio extends Spider {
     @Override
     public String searchContent(String key, boolean quick) {
         String target = siteUrl + "/search/" + URLEncoder.encode(key).replace("+", "%20") + "-------------.html";
-        Document doc = Jsoup.parse(OkHttp.string(target, getHeaders()));
+        Document doc = Jsoup.parse(fetchPage(target));
         return Result.string(parseVodList(doc));
     }
 
@@ -200,7 +218,7 @@ public class Libvio extends Spider {
     @Override
     public String playerContent(String flag, String id, List<String> vipFlags) {
         // id 是播放页链接 /w/{vid}-{sid}-{nid}.html
-        String html = OkHttp.string(siteUrl + id, getHeaders());
+        String html = fetchPage(siteUrl + id);
         Matcher m = regexPlayer.matcher(html);
         String url = "";
         String encrypt = "0";
