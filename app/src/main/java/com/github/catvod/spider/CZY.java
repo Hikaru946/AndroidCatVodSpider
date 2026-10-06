@@ -109,7 +109,9 @@ public class CZY extends Spider {
 
     @Override
     public String homeContent(boolean filter) throws Exception {
-        Document doc = Jsoup.parse(fetch(siteUrl));
+        // 注意：首页 / 被雷池动态加密（对有效会话也返回密文），永远不要请求它
+        // 精选列表改从"全部"分类页取（明文）
+        Document doc = Jsoup.parse(fetch(siteUrl + "/movie_bt/page/1"));
         List<Class> classes = new ArrayList<>();
         for (int i = 0; i < CAT_NAMES.length; i++) classes.add(new Class(CAT_URLS[i], CAT_NAMES[i]));
         List<Vod> list = new ArrayList<>();
@@ -120,7 +122,7 @@ public class CZY extends Spider {
 
     @Override
     public String homeVideoContent() throws Exception {
-        Document doc = Jsoup.parse(fetch(siteUrl));
+        Document doc = Jsoup.parse(fetch(siteUrl + "/movie_bt/page/1"));
         List<Vod> list = new ArrayList<>();
         parseCards(doc, list);
         return list.isEmpty() ? "" : Result.string(list.get(0));
