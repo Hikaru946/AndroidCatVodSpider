@@ -46,18 +46,16 @@ import java.util.regex.Pattern;
  *          c) 其余 → parse=1 交给 App 嗅探
  *   搜索   /page/{pg}?s={关键词}（WordPress 原生搜索，Cookie 需带 esc_search_captcha=1）
  *
- * ext 模式（同 Ddys）：站点有雷池 WAF，必要时 Cookie 注入
- *   "ext": "https://www.czzymovie.com|Cookie整串"
- * 也可以填当前可用域名 https://www.4kcz.com（站点公告的备用域名见其首页弹窗，发布页 www.cz01.vip）
+ * ext 模式（同 Ddys）：站点有雷池 WAF，Cookie 注入是必需项
+ *   "ext": "https://www.4kcz.com|Cookie整串"
+ * 无 Cookie 的请求会被 WAF 拦截页挡住（解析不到任何影片卡片）
+ * 备用域名见站点首页公告弹窗，发布页 www.cz01.vip
  */
 public class CZY extends Spider {
 
-    // JS 原文的 host；可被 ext 覆盖为 https://www.4kcz.com 等当前可用域名
-    private String siteUrl = "https://www.czzymovie.com";
+    // 默认域名取站点公告的当前推荐域名；ext 第二段填 WAF 会话 Cookie（必需）
+    private String siteUrl = "https://www.4kcz.com";
     private volatile String cookie = "";
-
-    // JS headers 里的 MOBILE_UA（iPhone UA 是这套站 WAF 实测放行的请求特征）
-    private static final String MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/100.0.4896.77 Mobile/15E148 Safari/604.1";
 
     // JS class_name / class_url 的 24 个分类（原文照抄，仅修正末尾"纪录片"的拼写）
     private static final String[] CAT_NAMES = {"全部", "豆瓣电影Top250", "高分影视", "最新电影", "热映中", "站长推荐", "电影", "电视剧", "动画", "国产剧", "日剧", "韩剧", "美剧", "海外剧", "俄罗斯电影", "加拿大电影", "华语电影", "印度电影", "日本电影", "欧美电影", "法国电影", "英国电影", "韩国电影", "纪录片"};
@@ -71,11 +69,13 @@ public class CZY extends Spider {
         if (parts.length > 1 && !parts[1].trim().isEmpty()) cookie = parts[1].trim();
     }
 
-    // JS headers 的 Java 版：MOBILE_UA + 搜索验证 Cookie + 可选注入的会话 Cookie
+    // 请求头：桌面 UA（与过 WAF 的浏览器一致）+ 注入的 WAF 会话 Cookie
+    // 重要：本站有雷池 WAF，无 Cookie 的请求会被拦截页挡住（返回的 HTML 里没有影片卡片），
+    // 所以 ext 必须填 "https://www.4kcz.com|你在浏览器里复制的Cookie"
     private Map<String, String> getHeader() {
         Map<String, String> header = new LinkedHashMap<>();
-        header.put("User-Agent", MOBILE_UA);
-        header.put("Cookie", "esc_search_captcha=1" + (cookie.isEmpty() ? "" : "; " + cookie));
+        header.put("User-Agent", Util.CHROME);
+        if (!cookie.isEmpty()) header.put("Cookie", cookie);
         URI uri = URI.create(siteUrl);
         header.put("Host", uri.getHost());
         header.put("Referer", siteUrl + "/");
@@ -109,7 +109,7 @@ public class CZY extends Spider {
 
     @Override
     public String homeContent(boolean filter) throws Exception {
-        Document doc = Jsoup.parse(OkHttp.string(siteUrl));
+        Document doc = Jsoup.parse(fetch(siteUrl));
         List<Class> classes = new ArrayList<>();
         for (int i = 0; i < CAT_NAMES.length; i++) classes.add(new Class(CAT_URLS[i], CAT_NAMES[i]));
         List<Vod> list = new ArrayList<>();
@@ -120,7 +120,7 @@ public class CZY extends Spider {
 
     @Override
     public String homeVideoContent() throws Exception {
-        Document doc = Jsoup.parse(OkHttp.string(siteUrl));
+        Document doc = Jsoup.parse(fetch(siteUrl));
         List<Vod> list = new ArrayList<>();
         parseCards(doc, list);
         return list.isEmpty() ? "" : Result.string(list.get(0));
@@ -135,8 +135,7 @@ public class CZY extends Spider {
         StringBuilder path = new StringBuilder(tid.startsWith("/") ? tid : "/" + tid);
         path.append(value(extend, "class")).append(value(extend, "area"));
         path.append("/page/").append(pg == null || pg.isEmpty() ? "1" : pg);
-        // 注意：首页/分类/搜索用裸请求（原作者实测通过的模式——带 iPhone UA 会触发站点移动模板导致解析为空）
-        Document doc = Jsoup.parse(OkHttp.string(path.toString()));
+        Document doc = Jsoup.parse(fetch(path.toString()));
         List<Vod> list = new ArrayList<>();
         parseCards(doc, list);
         return Result.get().vod(list).page(parseInt(pg, 1), parseInt(pg, 1) + 500, 25, 99999).string();
@@ -195,9 +194,9 @@ public class CZY extends Spider {
         return search(key, pg == null || pg.isEmpty() ? "1" : pg);
     }
 
-    // JS searchUrl: /page/fypage?s=**（WordPress 原生搜索；搜索用裸请求，与原作者实测模式一致）
+    // JS searchUrl: /page/fypage?s=**（WordPress 原生搜索）
     private String search(String key, String pg) throws Exception {
-        Document doc = Jsoup.parse(OkHttp.string(siteUrl + "/page/" + pg + "?s=" + URLEncoder.encode(key)));
+        Document doc = Jsoup.parse(fetch(siteUrl + "/page/" + pg + "?s=" + URLEncoder.encode(key)));
         List<Vod> list = new ArrayList<>();
         Element box = doc.selectFirst(".search_list");
         if (box != null) parseCards(box, list);
