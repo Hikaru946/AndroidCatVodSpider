@@ -109,7 +109,7 @@ public class CZY extends Spider {
 
     @Override
     public String homeContent(boolean filter) throws Exception {
-        Document doc = Jsoup.parse(fetch(siteUrl));
+        Document doc = Jsoup.parse(OkHttp.string(siteUrl));
         List<Class> classes = new ArrayList<>();
         for (int i = 0; i < CAT_NAMES.length; i++) classes.add(new Class(CAT_URLS[i], CAT_NAMES[i]));
         List<Vod> list = new ArrayList<>();
@@ -120,7 +120,7 @@ public class CZY extends Spider {
 
     @Override
     public String homeVideoContent() throws Exception {
-        Document doc = Jsoup.parse(fetch(siteUrl));
+        Document doc = Jsoup.parse(OkHttp.string(siteUrl));
         List<Vod> list = new ArrayList<>();
         parseCards(doc, list);
         return list.isEmpty() ? "" : Result.string(list.get(0));
@@ -135,7 +135,8 @@ public class CZY extends Spider {
         StringBuilder path = new StringBuilder(tid.startsWith("/") ? tid : "/" + tid);
         path.append(value(extend, "class")).append(value(extend, "area"));
         path.append("/page/").append(pg == null || pg.isEmpty() ? "1" : pg);
-        Document doc = Jsoup.parse(fetch(path.toString()));
+        // 注意：首页/分类/搜索用裸请求（原作者实测通过的模式——带 iPhone UA 会触发站点移动模板导致解析为空）
+        Document doc = Jsoup.parse(OkHttp.string(path.toString()));
         List<Vod> list = new ArrayList<>();
         parseCards(doc, list);
         return Result.get().vod(list).page(parseInt(pg, 1), parseInt(pg, 1) + 500, 25, 99999).string();
@@ -194,9 +195,9 @@ public class CZY extends Spider {
         return search(key, pg == null || pg.isEmpty() ? "1" : pg);
     }
 
-    // JS searchUrl: /page/fypage?s=**（WordPress 原生搜索；Cookie 带 esc_search_captcha=1 免验证码）
+    // JS searchUrl: /page/fypage?s=**（WordPress 原生搜索；搜索用裸请求，与原作者实测模式一致）
     private String search(String key, String pg) throws Exception {
-        Document doc = Jsoup.parse(fetch(siteUrl + "/page/" + pg + "?s=" + URLEncoder.encode(key)));
+        Document doc = Jsoup.parse(OkHttp.string(siteUrl + "/page/" + pg + "?s=" + URLEncoder.encode(key)));
         List<Vod> list = new ArrayList<>();
         Element box = doc.selectFirst(".search_list");
         if (box != null) parseCards(box, list);
