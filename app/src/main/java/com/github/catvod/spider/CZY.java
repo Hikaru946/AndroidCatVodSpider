@@ -225,7 +225,7 @@ public class CZY extends Spider {
                 return Result.get().url(ProxyVideo.buildCommonProxyUrl(url, getVideoHeader(url))).string();
             }
             // iframe 内无 result_v2 → 该播放器自解析，交给 App 嗅探
-            return Result.get().url(src).parse().header(getHeaders()).string();
+            return Result.get().url(src).parse().header(getHeader()).string();
         }
 
         // 分支 b：页面含 decrypted（AES 加密的内联脚本）
@@ -245,7 +245,7 @@ public class CZY extends Spider {
         }
 
         // 分支 c：交给 App 网页嗅探
-        return Result.get().url(siteUrl + id).parse().header(getHeaders()).string();
+        return Result.get().url(siteUrl + id).parse().header(getHeader()).string();
     }
 
     /* ==================== 工具方法 ==================== */
@@ -272,8 +272,9 @@ public class CZY extends Spider {
     }
 
     // JS 一级/搜索 卡片：.bt_img 容器 + .dytit 标题 + img.lazy data-original 封面 + .jidi 备注
-    private void parseCards(Document doc, List<Vod> list) {
-        for (Element div : doc.select(".bt_img.mi_ne_kd > ul > li")) {
+    // 参数用 Element（Jsoup 里 Document 是 Element 的子类，首页/搜索页都能直接传入）
+    private void parseCards(Element root, List<Vod> list) {
+        for (Element div : root.select(".bt_img.mi_ne_kd > ul > li")) {
             String id = div.select(".dytit > a").attr("href");
             String name = div.select(".dytit > a").text();
             if (id.isEmpty() || name.isEmpty()) continue;
